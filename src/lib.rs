@@ -1,22 +1,36 @@
-use std::io::{self, ErrorKind};
+use std::{
+    io::{self, ErrorKind},
+    sync::Arc,
+};
 
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    sync::RwLock,
     task::JoinHandle,
 };
 
+pub type StreamRwTuple = (Arc<RwLock<OwnedReadHalf>>, Arc<RwLock<OwnedWriteHalf>>);
+
+#[allow(unused_must_use)]
 pub fn spawn_stream_sync(
-    recv: OwnedReadHalf,
-    mut send: OwnedWriteHalf,
+    recv: Arc<RwLock<OwnedReadHalf>>,
+    send: Arc<RwLock<OwnedWriteHalf>>,
 ) -> JoinHandle<io::Result<()>> {
     tokio::spawn(async move {
         let mut buf = vec![0; 1024];
+        let recv = recv.read().await;
+        let mut send = send.write().await;
         loop {
             match recv.try_read(&mut buf) {
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
-                Ok(0) => return Ok(()) as io::Result<()>,
+                Ok(0) => {
+                    dbg!("disconnecting");
+                    // TODO: we probably want to send a disconnect over channels
+                    // send.shutdown().await;
+                    return Ok(()) as io::Result<()>;
+                }
                 Ok(n) => {
                     // Copy the data back to socket
                     send.write_all(&buf[..n]).await?;

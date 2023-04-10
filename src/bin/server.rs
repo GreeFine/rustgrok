@@ -1,23 +1,18 @@
-use std::{collections::HashMap, io, ops::DerefMut, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use log::info;
-use rustgrok::spawn_stream_sync;
+use rustgrok::{spawn_stream_sync, StreamRwTuple};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf},
-        TcpListener, TcpStream,
-    },
+    net::{tcp::OwnedReadHalf, TcpListener, TcpStream},
     sync::RwLock,
     try_join,
 };
 
 use lazy_static::lazy_static;
 
-type StreamRwTuple = (RwLock<OwnedReadHalf>, RwLock<OwnedWriteHalf>);
-
 lazy_static! {
-    static ref ROUTES: RwLock<HashMap<String, Arc<TcpStream>>> = RwLock::new(HashMap::new());
+    static ref ROUTES: RwLock<HashMap<String, StreamRwTuple>> = RwLock::new(HashMap::new());
 }
 
 #[tokio::main]
@@ -85,14 +80,16 @@ async fn handle_request(mut client_conn: TcpStream) -> Result<(), Box<dyn std::e
         client_send.shutdown().await.unwrap();
         return Ok(());
     }
-    let (server_recv, server_send) = server_conn.cloned().unwrap().into_split();
-    // let handle_one = async { tokio::io::copy(server_recv.deref_mut(), &mut client_send).await };
-    let handle_two = spawn_stream_sync(server_recv, client_send);
-    // let handle_two = async { tokio::io::copy(&mut client_recv, server_send).await };
-    let handle_two = spawn_stream_sync(client_recv, server_send);
+    let stream_server_conn = server_conn.unwrap();
+    let client_recv = Arc::new(RwLock::new(client_recv));
+    let client_send = Arc::new(RwLock::new(client_send));
+    let handle_one = spawn_stream_sync(stream_server_conn.0, client_send);
+    let handle_two = spawn_stream_sync(client_recv, stream_server_conn.1);
 
     try_join!(handle_two)?;
+    handle_one.abort();
 
+    dbg!("request done here on server");
     Ok(())
 }
 
@@ -104,7 +101,11 @@ async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::er
 
     {
         let mut route_w = ROUTES.write().await;
-        route_w.insert(new_host.trim().to_string(), Arc::new(client_conn));
+        let (recv, send) = client_conn.into_split();
+        route_w.insert(
+            new_host.trim().to_string(),
+            (Arc::new(RwLock::new(recv)), Arc::new(RwLock::new(send))),
+        );
         info!("Inserted new route: {new_host}");
     }
 
