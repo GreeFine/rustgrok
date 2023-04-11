@@ -37,19 +37,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     const PROXY_SERVER: &str = "127.0.0.1:3000";
-    let mut proxy_server_stream = connect_socket(PROXY_SERVER).await?;
-    info!("Connected to server {PROXY_SERVER}");
-
-    proxy_server_stream
-        .write_all(args.name.as_bytes())
-        .await
-        .expect("sending host to server");
-    let (server_recv, server_send) = proxy_server_stream.into_split();
-
     let binding_addr_client = format!("127.0.0.1:{}", args.port);
-    let server_recv = Arc::new(RwLock::new(server_recv));
-    let server_send = Arc::new(RwLock::new(server_send));
     loop {
+        let mut proxy_server_stream = connect_socket(PROXY_SERVER).await?;
+        info!("Connected to server {PROXY_SERVER}");
+
+        proxy_server_stream
+            .write_all(args.name.as_bytes())
+            .await
+            .expect("sending host to server");
+        let (server_recv, server_send) = proxy_server_stream.into_split();
+
+        let server_recv = Arc::new(RwLock::new(server_recv));
+        let server_send = Arc::new(RwLock::new(server_send));
         let proxy_app_stream = connect_socket(&binding_addr_client).await?;
         info!("Connected to app {binding_addr_client}");
         let (app_recv, app_send) = proxy_app_stream.into_split();
@@ -57,8 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let handle_one = spawn_stream_sync(server_recv.clone(), Arc::new(RwLock::new(app_send)));
         let handle_two = spawn_stream_sync(Arc::new(RwLock::new(app_recv)), server_send.clone());
 
-        try_join!(handle_one)?.0.unwrap();
-        handle_two.abort();
+        try_join!(handle_two)?.0.unwrap();
+        handle_one.abort();
         dbg!("request done here on client");
     }
 }

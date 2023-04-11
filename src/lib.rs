@@ -28,7 +28,7 @@ pub fn spawn_stream_sync(
                 Ok(0) => {
                     dbg!("disconnecting");
                     // TODO: we probably want to send a disconnect over channels
-                    // send.shutdown().await;
+                    send.shutdown().await;
                     return Ok(()) as io::Result<()>;
                 }
                 Ok(n) => {
