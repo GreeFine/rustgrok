@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use log::info;
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
@@ -16,7 +17,9 @@ pub type StreamRwTuple = (Arc<RwLock<OwnedReadHalf>>, Arc<RwLock<OwnedWriteHalf>
 pub fn spawn_stream_sync(
     recv: Arc<RwLock<OwnedReadHalf>>,
     send: Arc<RwLock<OwnedWriteHalf>>,
+    name: String,
 ) -> JoinHandle<io::Result<()>> {
+    info!("Proxy start: {}", name);
     tokio::spawn(async move {
         let mut buf = vec![0; 1024];
         let recv = recv.read().await;
@@ -26,7 +29,7 @@ pub fn spawn_stream_sync(
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
                 Ok(0) => {
-                    dbg!("disconnecting");
+                    info!("Proxy stop: {}", name);
                     // TODO: we probably want to send a disconnect over channels
                     send.shutdown().await;
                     return Ok(()) as io::Result<()>;

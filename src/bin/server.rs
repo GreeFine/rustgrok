@@ -65,7 +65,7 @@ async fn get_host<'a>(client_recv: &mut OwnedReadHalf) -> Option<String> {
     host.map(|h| h.to_string())
 }
 
-async fn handle_request(mut client_conn: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_request(client_conn: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
     let (mut client_recv, mut client_send) = client_conn.into_split();
 
     let server_conn = {
@@ -80,13 +80,21 @@ async fn handle_request(mut client_conn: TcpStream) -> Result<(), Box<dyn std::e
         client_send.shutdown().await.unwrap();
         return Ok(());
     }
-    let stream_server_conn = server_conn.unwrap();
+    let stream_localsrv_conn = server_conn.unwrap();
     let client_recv = Arc::new(RwLock::new(client_recv));
     let client_send = Arc::new(RwLock::new(client_send));
-    let handle_one = spawn_stream_sync(stream_server_conn.0, client_send);
-    let handle_two = spawn_stream_sync(client_recv, stream_server_conn.1);
+    let handle_one = spawn_stream_sync(
+        stream_localsrv_conn.0,
+        client_send,
+        "localsrv -> client".into(),
+    );
+    let handle_two = spawn_stream_sync(
+        client_recv,
+        stream_localsrv_conn.1,
+        "client -> localsrv".into(),
+    );
 
-    try_join!(handle_two)?;
+    try_join!(handle_two)?.0.unwrap();
     handle_one.abort();
 
     dbg!("request done here on server");
