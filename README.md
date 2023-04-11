@@ -12,6 +12,11 @@ Inspired by ngrok, a BLAZIN FAST ingress for your localhost apps.
 
 ## V1
 
-- [ ] Build client CLI to request the routing, and proxy the received traffic to the local port selected.
+- [x] Build client CLI to request the routing, and proxy the received traffic to the local port selected.
 - [ ] Better error handling, ...
 - [ ] DevOps: deployment + traefik and dns config.
+
+## V2
+
+- [ ] Preserve connection between proxy server and the local server.
+- [ ] TUI: display logs and details
