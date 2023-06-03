@@ -2,6 +2,11 @@
 
 Inspired by ngrok, a BLAZIN FAST ingress for your localhost apps.
 
+# DevOps configuration
+
+The server is deployed and redirected by Traefik, I query and update the Ingress that handle addresses being redirected.
+It would be better to use an Ingress with a wildcard, but this need additional configuration for Traefik which I am not willing to make.
+
 # Progress / Features
 
 ## PoC
@@ -14,7 +19,7 @@ Inspired by ngrok, a BLAZIN FAST ingress for your localhost apps.
 
 - [x] Build client CLI to request the routing, and proxy the received traffic to the local port selected.
 - [ ] Better error handling, ...
-- [ ] DevOps: deployment + traefik and dns config.
+- [x] DevOps: deployment + traefik and dns config.
 
 ## V2
 
