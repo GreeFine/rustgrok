@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use log::info;
-use rustgrok::{spawn_stream_sync, StreamRwTuple};
+use rustgrok::{ingress, spawn_stream_sync, StreamRwTuple};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{tcp::OwnedReadHalf, TcpListener, TcpStream},
@@ -105,8 +105,11 @@ async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::er
     let mut buffer = [0; 1024];
 
     let count = client_conn.read(&mut buffer).await.unwrap();
-    let new_host = String::from_utf8_lossy(&buffer[..count]);
-
+    let new_host = format!(
+        "{}.rgrok.blackfoot.dev",
+        String::from_utf8_lossy(&buffer[..count])
+    );
+    ingress::expose_subdomain(&new_host).await?;
     {
         let mut route_w = ROUTES.write().await;
         let (recv, send) = client_conn.into_split();
