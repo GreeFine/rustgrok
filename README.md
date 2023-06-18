@@ -18,8 +18,17 @@ It would be better to use an Ingress with a wildcard, but this need additional c
 ## V1
 
 - [x] Build client CLI to request the routing, and proxy the received traffic to the local port selected.
-- [ ] Better error handling, ...
 - [x] DevOps: deployment + traefik and dns config.
+
+## V1.1
+
+- [ ] Implement a multi stream version, to work with Browser request, that can keep-alive the connection
+- [ ] Heartbeat and connection monitoring, to cleanup broken or disconnected routes/users.
+
+# V1.x
+
+- [ ] Better error handling
+
 
 ## V2
 

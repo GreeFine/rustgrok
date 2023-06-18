@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
-use log::{debug, info};
+use log::{debug, error, info};
 #[cfg(feature = "ingress")]
 use rustgrok::ingress;
 use rustgrok::{spawn_stream_sync, StreamRwTuple};
@@ -137,13 +137,29 @@ async fn handle_request(
     Ok(())
 }
 
+/// Get the port send by the user after connecting a new stream
+///
+/// This port is used to identify the `USER_REQUEST_WAITING` we want to attach it to
+async fn get_target_port<'a>(client_recv: &mut OwnedReadHalf) -> Result<u16, ()> {
+    let mut buff = [0_u8; 2];
+
+    let read = client_recv.peek(&mut buff).await.unwrap();
+    if read != 2 {
+        error!("Unable to read the port from new stream from client");
+        return Err(());
+    }
+    Ok(u16::from_be_bytes(buff))
+}
+
 async fn handle_client_stream(
     mut client_conn: TcpStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let (mut request_recv, mut request_send) = client_conn.into_split();
+
+    let target_port = get_target_port(&mut request_recv).await.unwrap();
     // TODO: Get the port this stream is linked to.
     // Link the client / user stream together
     todo!()
-    // let stream_client_conn = client_conn.unwrap();
     // let request_recv = Arc::new(RwLock::new(request_recv));
     // let request_send = Arc::new(RwLock::new(request_send));
     // let handle_one = spawn_stream_sync(

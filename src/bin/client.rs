@@ -42,8 +42,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     const PROXY_SERVER: &str = "127.0.0.1:3000";
     let binding_addr_client = format!("127.0.0.1:{}", args.port);
     loop {
-        // TODO: Would be better to keep this connection open.
-        // In order to do that the server need to communicate when the client terminated the request.
         let mut proxy_localsrv_stream = connect_socket(PROXY_SERVER).await?;
         info!("Connected to server {PROXY_SERVER}");
 
@@ -51,27 +49,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .write_all(args.name.as_bytes())
             .await
             .expect("sending host to server");
-        let (localsrv_recv, localsrv_send) = proxy_localsrv_stream.into_split();
+        // TODO: After sending the route we want to register we:
+        // 1. wait for the server to ask us to create a stream
+        // 2. create a new stream and connect it to the stream port on the server (3001)
+        // 3. send the port/id the server gave us to identify this steam
+        // 4. in a new thread proxy the stream
+        todo!("new architecture");
+        // let (localsrv_recv, localsrv_send) = proxy_localsrv_stream.into_split();
 
-        let localsrv_recv = Arc::new(RwLock::new(localsrv_recv));
-        let localsrv_send = Arc::new(RwLock::new(localsrv_send));
-        let proxy_app_stream = connect_socket(&binding_addr_client).await?;
-        info!("Connected to app {binding_addr_client}");
-        let (app_recv, app_send) = proxy_app_stream.into_split();
+        // let localsrv_recv = Arc::new(RwLock::new(localsrv_recv));
+        // let localsrv_send = Arc::new(RwLock::new(localsrv_send));
+        // let proxy_app_stream = connect_socket(&binding_addr_client).await?;
+        // info!("Connected to app {binding_addr_client}");
+        // let (app_recv, app_send) = proxy_app_stream.into_split();
 
-        let handle_one = spawn_stream_sync(
-            localsrv_recv.clone(),
-            Arc::new(RwLock::new(app_send)),
-            "localsrv -> app".into(),
-        );
-        let handle_two = spawn_stream_sync(
-            Arc::new(RwLock::new(app_recv)),
-            localsrv_send.clone(),
-            "app -> localsrv".into(),
-        );
+        // let handle_one = spawn_stream_sync(
+        //     localsrv_recv.clone(),
+        //     Arc::new(RwLock::new(app_send)),
+        //     "localsrv -> app".into(),
+        // );
+        // let handle_two = spawn_stream_sync(
+        //     Arc::new(RwLock::new(app_recv)),
+        //     localsrv_send.clone(),
+        //     "app -> localsrv".into(),
+        // );
 
-        try_join!(handle_two)?.0.unwrap();
-        handle_one.abort();
-        dbg!("request done here on client");
+        // try_join!(handle_two)?.0.unwrap();
+        // handle_one.abort();
+        // dbg!("request done here on client");
     }
 }
