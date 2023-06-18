@@ -34,8 +34,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
     pretty_env_logger::init();
 
-    let args = Args::parse();
+    let args: Args = Args::parse();
 
+    #[cfg(not(feature = "localhost"))]
+    const PROXY_SERVER: &str = "34.159.32.3:3000";
+    #[cfg(feature = "localhost")]
     const PROXY_SERVER: &str = "127.0.0.1:3000";
     let binding_addr_client = format!("127.0.0.1:{}", args.port);
     loop {

@@ -23,7 +23,7 @@ pub fn spawn_stream_sync(
 ) -> JoinHandle<io::Result<()>> {
     info!("Proxy start: {}", name);
     tokio::spawn(async move {
-        let mut buf = vec![0; 1024];
+        let mut buf = vec![0; 1_000_000];
         let recv = recv.read().await;
         let mut send = send.write().await;
         loop {
