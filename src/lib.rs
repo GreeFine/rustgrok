@@ -15,7 +15,6 @@ use tokio::{
 
 pub type StreamRwTuple = (Arc<RwLock<OwnedReadHalf>>, Arc<RwLock<OwnedWriteHalf>>);
 
-#[allow(unused_must_use)]
 pub fn spawn_stream_sync(
     recv: Arc<RwLock<OwnedReadHalf>>,
     send: Arc<RwLock<OwnedWriteHalf>>,
@@ -33,7 +32,7 @@ pub fn spawn_stream_sync(
                 Ok(0) => {
                     info!("Proxy stop: {}", name);
                     // TODO: we probably want to send a disconnect over channels
-                    send.shutdown().await;
+                    let _ = send.shutdown().await;
                     return Ok(()) as io::Result<()>;
                 }
                 Ok(n) => {

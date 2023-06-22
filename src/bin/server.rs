@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    for jh in [client_handler, receiver_handler] {
+    for jh in [client_handler, receiver_handler, client_streams] {
         jh.await.unwrap();
     }
 
@@ -152,29 +152,37 @@ async fn get_target_port<'a>(client_recv: &mut OwnedReadHalf) -> Result<u16, ()>
 }
 
 async fn handle_client_stream(
-    mut client_conn: TcpStream,
+    client_stream_conn: TcpStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut request_recv, mut request_send) = client_conn.into_split();
+    let (mut client_stream_recv, client_stream_send) = client_stream_conn.into_split();
 
-    let target_port = get_target_port(&mut request_recv).await.unwrap();
-    // TODO: Get the port this stream is linked to.
-    // Link the client / user stream together
-    todo!()
-    // let request_recv = Arc::new(RwLock::new(request_recv));
-    // let request_send = Arc::new(RwLock::new(request_send));
-    // let handle_one = spawn_stream_sync(
-    //     stream_client_conn.0,
-    //     request_send,
-    //     "localsrv -> client".into(),
-    // );
-    // let handle_two = spawn_stream_sync(
-    //     request_recv,
-    //     stream_client_conn.1,
-    //     "client -> localsrv".into(),
-    // );
+    let target_port = get_target_port(&mut client_stream_recv).await.unwrap();
+    info!("Received a new stream from client for port: {target_port}");
 
-    // try_join!(handle_two)?.0.unwrap();
-    // handle_one.abort();
+    let (user_request_recv, user_request_send) = USER_REQUEST_WAITING
+        .write()
+        .await
+        .remove_entry(&target_port)
+        .unwrap()
+        .1;
+
+    let client_stream_recv = Arc::new(RwLock::new(client_stream_recv));
+    let client_stream_send = Arc::new(RwLock::new(client_stream_send));
+    let handle_one = spawn_stream_sync(
+        user_request_recv,
+        client_stream_send,
+        "user -> client".into(),
+    );
+    let handle_two = spawn_stream_sync(
+        client_stream_recv,
+        user_request_send,
+        "client -> user".into(),
+    );
+
+    try_join!(handle_two)?.0.unwrap();
+    handle_one.abort();
+
+    Ok(())
 }
 
 async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
