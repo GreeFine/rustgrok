@@ -59,17 +59,12 @@ fn spawn_stream(port: u16, local_app_addr: String) {
         let handle_one = spawn_stream_sync(app_recv, server_send, "app -> server".into());
         let handle_two = spawn_stream_sync(server_recv, app_send, "server -> app".into());
 
-        let _ = try_join!(handle_two).unwrap();
-        handle_one.abort();
-        dbg!("request done here on client");
+        let _ = try_join!(handle_one).unwrap();
+        handle_two.abort();
+        info!("stream done for {port}");
     });
 }
 
-// TODO: After sending the route we want to register we:
-// 1. wait for the server to ask us to create a stream
-// 2. create a new stream and connect it to the stream port on the server (3001)
-// 3. send the port/id the server gave us to identify this steam
-// 4. in a new thread proxy the stream
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -78,24 +73,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Args = Args::parse();
 
     let local_app_addr = format!("127.0.0.1:{}", args.port);
-    loop {
-        let mut server = connect_socket(PROXY_SERVER).await?;
-        info!("Connected to server {PROXY_SERVER}");
+    let mut server = connect_socket(PROXY_SERVER).await?;
+    info!("Connected to server {PROXY_SERVER}");
 
-        server
-            .write_all(args.name.as_bytes())
-            .await
-            .expect("sending host to server");
+    server
+        .write_all(args.name.as_bytes())
+        .await
+        .expect("sending host to server");
 
-        let mut buff = [0; 2];
-        while let Ok(n) = server.read(&mut buff).await {
-            if n == 0 {
-                info!("Connection closed");
-                break;
-            }
-            let received_port = u16::from_be_bytes(buff);
-            info!("received_port: {received_port}");
-            spawn_stream(received_port, local_app_addr.clone());
+    let mut buff = [0; 2];
+    while let Ok(n) = server.read(&mut buff).await {
+        if n == 0 {
+            info!("Connection closed");
+            break;
         }
+        let received_port = u16::from_be_bytes(buff);
+        info!("received_port: {received_port}");
+        spawn_stream(received_port, local_app_addr.clone());
     }
+    Ok(())
 }

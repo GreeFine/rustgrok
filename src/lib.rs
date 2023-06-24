@@ -30,12 +30,11 @@ pub fn spawn_stream_sync(
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
                 Ok(0) => {
-                    info!("Proxy stop: {}", name);
-                    // TODO: we probably want to send a disconnect over channels
-                    let _ = send.shutdown().await;
+                    info!("Proxy stop: {name}");
                     return Ok(()) as io::Result<()>;
                 }
                 Ok(n) => {
+                    info!("Proxy {name}, received data {n} bytes");
                     // Copy the data back to socket
                     send.write_all(&buf[..n]).await?;
                 }

@@ -143,7 +143,7 @@ async fn handle_request(
 async fn get_target_port<'a>(client_recv: &mut OwnedReadHalf) -> Result<u16, ()> {
     let mut buff = [0_u8; 2];
 
-    let read = client_recv.peek(&mut buff).await.unwrap();
+    let read = client_recv.read(&mut buff).await.unwrap();
     if read != 2 {
         error!("Unable to read the port from new stream from client");
         return Err(());
@@ -179,8 +179,8 @@ async fn handle_client_stream(
         "client -> user".into(),
     );
 
-    try_join!(handle_two)?.0.unwrap();
-    handle_one.abort();
+    try_join!(handle_one)?.0.unwrap();
+    handle_two.abort();
 
     Ok(())
 }
