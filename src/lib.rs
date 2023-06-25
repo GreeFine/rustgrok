@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use log::info;
+use log::{error, info};
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
@@ -22,26 +22,30 @@ pub fn spawn_stream_sync(
 ) -> JoinHandle<io::Result<()>> {
     info!("Proxy start: {}", name);
     tokio::spawn(async move {
-        let mut buf = vec![0; 1_000_000];
+        // looks like the max transferred is 32_768, 2 times that to account for weird things /shrug
+        let mut buff = vec![0; 32_768 * 2];
         let recv = recv.read().await;
         let mut send = send.write().await;
         loop {
-            match recv.try_read(&mut buf) {
+            match recv.try_read(&mut buff) {
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
                 Ok(0) => {
                     info!("Proxy stop: {name}");
+                    // Shutting down the connection
+                    let _ = send.shutdown().await;
                     return Ok(()) as io::Result<()>;
                 }
                 Ok(n) => {
                     info!("Proxy {name}, received data {n} bytes");
                     // Copy the data back to socket
-                    send.write_all(&buf[..n]).await?;
+                    send.write_all(&buff[..n]).await?;
                 }
                 Err(e) => {
                     // Unexpected socket error. There isn't much we can do
                     // here so just stop processing.
                     if !matches!(e.kind(), ErrorKind::WouldBlock) {
+                        error!("Proxy error: {e}");
                         return Err(e);
                     }
                 }

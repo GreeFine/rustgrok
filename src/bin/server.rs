@@ -1,5 +1,7 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, io, net::SocketAddr, sync::Arc};
 
+use futures::future;
+use lazy_static::lazy_static;
 use log::{debug, error, info};
 #[cfg(feature = "ingress")]
 use rustgrok::ingress;
@@ -11,10 +13,7 @@ use tokio::{
         TcpListener, TcpStream,
     },
     sync::RwLock,
-    try_join,
 };
-
-use lazy_static::lazy_static;
 
 lazy_static! {
     /// Routes registered by the clients, the connection associated is used to ask for a `CLIENT_STREAM`
@@ -25,9 +24,12 @@ lazy_static! {
     static ref USER_REQUEST_WAITING: RwLock<HashMap<u16, StreamRwTuple>> = RwLock::new(HashMap::new());
 }
 
+/// FIXME: load this from env
+const API_KEY: &str = "SuperSecret";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "server,rustgrok");
     pretty_env_logger::init();
 
     const BINDING_ADDR_CLIENT: &str = "0.0.0.0:3000";
@@ -87,21 +89,17 @@ async fn get_host<'a>(client_recv: &mut OwnedReadHalf) -> Option<String> {
     host.map(|h| h.to_string())
 }
 
-async fn get_client(host: &Option<String>) -> Option<StreamRwTuple> {
+async fn get_client(host: &String) -> Option<StreamRwTuple> {
     debug!("Acquiring lock for : [handle_request] ROUTES.write().await");
-    let routes_w = ROUTES.read().await;
+    let routes_r = ROUTES.read().await;
     debug!("Done: [handle_request] ROUTES.write().await");
 
-    host.as_ref()
-        .and_then(|destination| routes_w.get(destination).cloned())
+    routes_r.get(host).cloned()
 }
 
-async fn request_client_stream(port: u16, client: StreamRwTuple) {
+async fn request_client_stream(port: u16, client: StreamRwTuple) -> Result<(), io::Error> {
     let mut client_w = client.1.write().await;
-    client_w
-        .write_all(&port.to_be_bytes())
-        .await
-        .expect("asking for a new TcpStream");
+    client_w.write_all(&port.to_be_bytes()).await
 }
 
 async fn insert_waiting_client(port: u16, owned_streams_rw: (OwnedReadHalf, OwnedWriteHalf)) {
@@ -119,20 +117,27 @@ async fn handle_request(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mut request_recv, mut request_send) = request_conn.into_split();
 
-    let host = get_host(&mut request_recv).await;
-    let port = socket.port();
-    info!("Request for host: {host:?} from user_port: {}", port);
-    let client_conn = get_client(&host).await;
-    if client_conn.is_none() {
-        info!("did not found associated route to request");
-        request_send.shutdown().await.unwrap();
-        return Ok(());
+    if let Some(host) = get_host(&mut request_recv).await {
+        let port = socket.port();
+        info!("Request for host: {host:?} from user_port: {}", port);
+        let client_conn = get_client(&host).await;
+        if client_conn.is_none() {
+            info!("did not found associated route to request");
+            request_send.shutdown().await.unwrap();
+            return Ok(());
+        }
+        if let Err(err) = request_client_stream(port, client_conn.unwrap()).await {
+            error!("requesting new stream: {err}, removing route: {host}");
+            let mut routes_w = ROUTES.write().await;
+            routes_w.remove_entry(&host);
+        } else {
+            insert_waiting_client(port, (request_recv, request_send)).await;
+            info!("Request handled and now waiting for client");
+        }
+    } else {
+        let _ = request_send.shutdown().await;
+        info!("Host not found in client request, disconnected.")
     }
-    request_client_stream(port, client_conn.unwrap()).await;
-
-    insert_waiting_client(port, (request_recv, request_send)).await;
-
-    dbg!("Request handled and now waiting for client");
 
     Ok(())
 }
@@ -151,10 +156,28 @@ async fn get_target_port<'a>(client_recv: &mut OwnedReadHalf) -> Result<u16, ()>
     Ok(u16::from_be_bytes(buff))
 }
 
-async fn handle_client_stream(
-    client_stream_conn: TcpStream,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn check_api_key(client_recv: &mut OwnedReadHalf) -> Result<(), ()> {
+    let mut buff = [0_u8; API_KEY.len()];
+
+    let read = client_recv.read(&mut buff).await.unwrap();
+    if read != API_KEY.len() {
+        error!("Unable to read the API_KEY from new stream from client");
+        return Err(());
+    } else if buff != API_KEY.as_bytes() {
+        error!(
+            "invalid API_KEY new stream from client, received: '{}'",
+            String::from_utf8_lossy(&buff)
+        );
+        return Err(());
+    }
+
+    Ok(())
+}
+
+async fn handle_client_stream(client_stream_conn: TcpStream) -> Result<(), ()> {
     let (mut client_stream_recv, client_stream_send) = client_stream_conn.into_split();
+
+    check_api_key(&mut client_stream_recv).await?;
 
     let target_port = get_target_port(&mut client_stream_recv).await.unwrap();
     info!("Received a new stream from client for port: {target_port}");
@@ -168,27 +191,28 @@ async fn handle_client_stream(
 
     let client_stream_recv = Arc::new(RwLock::new(client_stream_recv));
     let client_stream_send = Arc::new(RwLock::new(client_stream_send));
-    let handle_one = spawn_stream_sync(
+    let user_flow = spawn_stream_sync(
         user_request_recv,
         client_stream_send,
         "user -> client".into(),
     );
-    let handle_two = spawn_stream_sync(
+    let client_flow = spawn_stream_sync(
         client_stream_recv,
         user_request_send,
         "client -> user".into(),
     );
 
-    try_join!(handle_one)?.0.unwrap();
-    handle_two.abort();
+    // Wait for only one of the two stream to finish
+    let _ = future::select_all(vec![user_flow, client_flow]).await;
+
+    info!("Request/stream done here on server for port: {target_port}");
 
     Ok(())
 }
 
-async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+async fn get_requested_host(client_recv: &mut OwnedReadHalf) -> String {
     let mut buffer = [0; 1024];
-
-    let count = client_conn.read(&mut buffer).await.unwrap();
+    let count = client_recv.read(&mut buffer).await.unwrap();
 
     #[cfg(feature = "localhost")]
     let new_host = format!("{}", String::from_utf8_lossy(&buffer[..count]));
@@ -197,6 +221,16 @@ async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::er
         "{}.rgrok.blackfoot.dev",
         String::from_utf8_lossy(&buffer[..count])
     );
+    new_host
+}
+
+async fn handle_client(client_conn: TcpStream) -> Result<(), ()> {
+    let (mut recv, send) = client_conn.into_split();
+
+    check_api_key(&mut recv).await?;
+
+    let new_host = get_requested_host(&mut recv).await;
+
     #[cfg(feature = "ingress")]
     ingress::expose_subdomain(&new_host).await?;
     {
@@ -204,7 +238,6 @@ async fn handle_client(mut client_conn: TcpStream) -> Result<(), Box<dyn std::er
         let mut routes_w = ROUTES.write().await;
         debug!("Done: ROUTES.read().await");
 
-        let (recv, send) = client_conn.into_split();
         routes_w.insert(
             new_host.trim().to_string(),
             (Arc::new(RwLock::new(recv)), Arc::new(RwLock::new(send))),
