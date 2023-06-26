@@ -232,7 +232,7 @@ async fn handle_client(client_conn: TcpStream) -> Result<(), ()> {
     let new_host = get_requested_host(&mut recv).await;
 
     #[cfg(feature = "ingress")]
-    ingress::expose_subdomain(&new_host).await?;
+    ingress::expose_subdomain(&new_host).await.map_err(|_| ())?;
     {
         debug!("Acquiring lock for : ROUTES.read().await");
         let mut routes_w = ROUTES.write().await;
