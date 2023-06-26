@@ -245,5 +245,7 @@ async fn handle_client(client_conn: TcpStream) -> Result<(), ()> {
         info!("Inserted new route: {new_host}");
     }
 
+    // TODO: check if the client disconnected and prune it's routes
+
     Ok(())
 }

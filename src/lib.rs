@@ -3,6 +3,8 @@ pub mod ingress;
 use std::{
     io::{self, ErrorKind},
     sync::Arc,
+    thread,
+    time::Duration,
 };
 
 use log::{error, info};
@@ -50,6 +52,7 @@ pub fn spawn_stream_sync(
                     }
                 }
             }
+            thread::sleep(Duration::from_millis(100))
         }
     })
 }
