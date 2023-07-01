@@ -10,12 +10,16 @@ use std::{
 use log::{error, info};
 use tokio::{
     io::AsyncWriteExt,
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
     sync::RwLock,
     task::JoinHandle,
 };
 
 pub type StreamRwTuple = (Arc<RwLock<OwnedReadHalf>>, Arc<RwLock<OwnedWriteHalf>>);
+pub type ClientConnection = Arc<RwLock<TcpStream>>;
 
 pub fn spawn_stream_sync(
     recv: Arc<RwLock<OwnedReadHalf>>,
@@ -52,7 +56,7 @@ pub fn spawn_stream_sync(
                     }
                 }
             }
-            thread::sleep(Duration::from_millis(100))
+            thread::sleep(Duration::from_millis(25))
         }
     })
 }

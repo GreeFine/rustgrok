@@ -120,6 +120,6 @@ async fn main() -> Result<(), io::Error> {
                 };
             }
         };
-        thread::sleep(Duration::from_millis(100))
+        thread::sleep(Duration::from_millis(25))
     }
 }
