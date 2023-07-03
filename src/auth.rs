@@ -5,11 +5,12 @@ use crate::config::API_KEY;
 
 /// Check if the API key received in the stream, is the one we expect
 pub async fn check_api_key(client: &mut TcpStream) -> Result<(), ()> {
-    assert!(
-        API_KEY.len() < 64,
-        "api key is expected to be 64 bytes or less"
+    assert_eq!(
+        API_KEY.len(),
+        32,
+        "api key is expected to be 32 bytes or less"
     );
-    let mut buff = [0_u8; 64];
+    let mut buff = [0_u8; 32];
 
     let read = client.read(&mut buff).await.unwrap();
     if read != API_KEY.len() {

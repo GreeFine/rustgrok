@@ -4,7 +4,10 @@ use tokio::{
     net::{tcp::OwnedReadHalf, TcpStream},
 };
 
-use crate::{config::ROUTES, ClientConnection};
+use crate::{
+    config::{self, ROUTES},
+    ClientConnection,
+};
 
 pub async fn get_client_host(client: &mut TcpStream) -> String {
     let mut buffer = [0; 1024];
@@ -26,12 +29,10 @@ pub async fn get_user_host<'a>(client_recv: &mut OwnedReadHalf) -> Option<String
 
     let read = client_recv.peek(&mut buffer).await.unwrap();
     let raw_http_request = String::from_utf8_lossy(&buffer[..read]);
-    let host = raw_http_request
-        .split('\n')
-        .find(|header| header.starts_with("Host: "))
-        .map(|header| header["Host: ".len()..].trim());
 
-    host.map(|h| h.to_string())
+    let captures = config::HOST_EXTRACT.captures(&raw_http_request);
+
+    captures.and_then(|captures| captures.name("hostname").map(|m| m.as_str().to_string()))
 }
 
 /// Get the port send by the user after connecting a new stream

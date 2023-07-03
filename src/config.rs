@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use regex::{Regex, RegexBuilder};
 use tokio::sync::RwLock;
 
 use crate::{ClientConnection, StreamRwTuple};
@@ -13,6 +14,8 @@ lazy_static! {
   pub static ref USER_REQUEST_WAITING: RwLock<HashMap<u16, StreamRwTuple>> = RwLock::new(HashMap::new());
   /// FIXME: load this from env
   pub static ref API_KEY: String = std::env::var("API_KEY").unwrap_or("gub_tEPmAGMzb9SQxzTzh9ZU95Wtj6uP".to_string());
+  /// Regex used to extract the host from the request,
+  pub static ref HOST_EXTRACT: Regex = RegexBuilder::new(r#"(\\r)?\nhost: (?P<hostname>[A-z-_]{0,32})(\r)?\n"#).case_insensitive(true).build().unwrap();
 }
 
 #[cfg(not(feature = "deployed"))]

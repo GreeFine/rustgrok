@@ -173,16 +173,21 @@ pub mod client {
     }
 
     pub async fn connect_with_server(host_name: &str) -> Result<TcpStream, std::io::Error> {
+        assert_eq!(
+            config::API_KEY.len(),
+            32,
+            "server is expecting a 32 bytes key"
+        );
         info!("Connecting to server {}", config::PROXY_SERVER);
         let mut server = connect_socket(config::PROXY_SERVER).await?;
         info!("Connected to server");
 
+        let mut payload = vec![0_u8; config::API_KEY.len() + host_name.len()];
+        payload[..32].copy_from_slice(config::API_KEY.as_bytes());
+        payload[32..].copy_from_slice(host_name.as_bytes());
+
         server
-            .write_all(config::API_KEY.as_bytes())
-            .await
-            .expect("sending api key to server");
-        server
-            .write_all(host_name.as_bytes())
+            .write_all(&payload)
             .await
             .expect("sending host to server");
 
