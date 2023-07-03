@@ -1,13 +1,7 @@
-use std::{
-    io::{self, ErrorKind},
-    thread,
-    time::Duration,
-};
+use std::io;
 
 use clap::{arg, command, Parser};
-use log::{error, info};
-use rustgrok::{config, method};
-use tokio::io::AsyncWriteExt;
+use rustgrok::method;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -28,39 +22,11 @@ async fn main() -> Result<(), io::Error> {
     let args: Args = Args::parse();
 
     let local_app_addr = format!("127.0.0.1:{}", args.port);
-    let mut server = method::connect_socket(config::PROXY_SERVER).await?;
-    info!("Connected to server {}", config::PROXY_SERVER);
-
-    server
-        .write_all(config::API_KEY.as_bytes())
+    let server = method::client::connect_with_server(&local_app_addr)
         .await
-        .expect("sending api key to server");
-    server
-        .write_all(args.name.as_bytes())
-        .await
-        .expect("sending host to server");
-
-    let mut buff = [0; 2];
+        .unwrap();
     loop {
-        let read = server.try_read(&mut buff);
-        match read {
-            Ok(n) => {
-                if n == 0 {
-                    info!("Connection closed");
-                    break Ok(());
-                }
-                let received_port = u16::from_be_bytes(buff);
-                info!("received_port: {received_port}");
-                method::client::spawn_new_stream(received_port, local_app_addr.clone());
-                thread::sleep(Duration::from_millis(25));
-            }
-            Err(e) => {
-                if !matches!(e.kind(), ErrorKind::WouldBlock) {
-                    error!("Proxy error: {e}");
-                    break Err(e);
-                };
-            }
-        };
-        thread::sleep(Duration::from_millis(25))
+        let received_port = method::client::wait_for_stream_request(&server).unwrap();
+        method::client::spawn_new_stream(received_port, local_app_addr.clone());
     }
 }

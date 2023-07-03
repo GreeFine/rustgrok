@@ -10,7 +10,7 @@ RUN mkdir -p ./src/bin && \
     rm ./src/lib.rs ./src/bin/client.rs ./src/bin/server.rs
 
 COPY . .
-RUN cargo build --bin server --features ingress --release
+RUN cargo build --bin server --features ingress,deployed --release
 
 FROM debian:stable-slim AS runtime
 WORKDIR /app

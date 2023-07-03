@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Connect to socket with it's address as a &str
-pub async fn connect_socket(addr: impl AsRef<str>) -> Result<TcpStream, io::Error> {
+async fn connect_socket(addr: impl AsRef<str>) -> Result<TcpStream, io::Error> {
     let addr = addr.as_ref().parse().unwrap();
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
@@ -170,5 +170,47 @@ pub mod client {
 
             info!("stream done for {port}");
         });
+    }
+
+    pub async fn connect_with_server(host_name: &str) -> Result<TcpStream, std::io::Error> {
+        info!("Connecting to server {}", config::PROXY_SERVER);
+        let mut server = connect_socket(config::PROXY_SERVER).await?;
+        info!("Connected to server");
+
+        server
+            .write_all(config::API_KEY.as_bytes())
+            .await
+            .expect("sending api key to server");
+        server
+            .write_all(host_name.as_bytes())
+            .await
+            .expect("sending host to server");
+
+        Ok(server)
+    }
+
+    pub fn wait_for_stream_request(server: &TcpStream) -> Result<u16, Option<io::Error>> {
+        let mut buff = [0; 2];
+        loop {
+            let read = server.try_read(&mut buff);
+            match read {
+                Ok(n) => {
+                    if n == 0 {
+                        info!("Connection closed");
+                        break Err(None);
+                    }
+                    let received_port = u16::from_be_bytes(buff);
+                    info!("received_port: {received_port}");
+                    return Ok(received_port);
+                }
+                Err(e) => {
+                    if !matches!(e.kind(), ErrorKind::WouldBlock) {
+                        error!("Proxy error: {e}");
+                        break Err(Some(e));
+                    };
+                }
+            };
+            thread::sleep(Duration::from_millis(25))
+        }
     }
 }

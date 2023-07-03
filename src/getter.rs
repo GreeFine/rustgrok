@@ -11,9 +11,9 @@ pub async fn get_client_host(client: &mut TcpStream) -> String {
     let count = client.read(&mut buffer).await.unwrap();
 
     // FIXME: Check if host is valid
-    #[cfg(feature = "localhost")]
+    #[cfg(not(feature = "deployed"))]
     let new_host = format!("{}", String::from_utf8_lossy(&buffer[..count]));
-    #[cfg(not(feature = "localhost"))]
+    #[cfg(feature = "deployed")]
     let new_host = format!(
         "{}.rgrok.blackfoot.dev",
         String::from_utf8_lossy(&buffer[..count])
