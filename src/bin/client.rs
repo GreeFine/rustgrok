@@ -22,7 +22,7 @@ async fn main() -> Result<(), io::Error> {
     let args: Args = Args::parse();
 
     let local_app_addr = format!("127.0.0.1:{}", args.port);
-    let server = method::client::connect_with_server(&local_app_addr)
+    let server = method::client::connect_with_server(&args.name)
         .await
         .unwrap();
     loop {
