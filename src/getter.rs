@@ -1,14 +1,14 @@
-use log::{debug, error};
+use log::error;
 use tokio::{
     io::AsyncReadExt,
     net::{tcp::OwnedReadHalf, TcpStream},
 };
 
-use crate::{
-    config::{self, ROUTES},
-    ClientConnection,
-};
+use crate::config::{self};
 
+/// Get the host send by the client
+///
+/// If the feature `deployed` is enabled, the host will be suffixed with `.rgrok.blackfoot.dev`
 pub async fn get_client_host(client: &mut TcpStream) -> String {
     let mut buffer = [0; 1024];
     let count = client.read(&mut buffer).await.unwrap();
@@ -24,6 +24,7 @@ pub async fn get_client_host(client: &mut TcpStream) -> String {
     new_host
 }
 
+/// Get the host send by the user, this is used to identify the route we want to attach it to
 pub async fn get_user_host<'a>(client_recv: &mut OwnedReadHalf) -> Option<String> {
     let mut buffer = [0; 1024];
 

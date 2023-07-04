@@ -71,6 +71,7 @@ pub fn spawn_stream_sync(
     })
 }
 
+/// This module contains the methods used by the server to handle the client requests
 pub mod server {
     use super::*;
 
@@ -135,6 +136,7 @@ pub mod server {
     }
 }
 
+/// This module contains the methods used by the client to handle the server requests
 pub mod client {
     use super::*;
 
@@ -172,6 +174,7 @@ pub mod client {
         });
     }
 
+    /// Connect to the server and send the host name to the server
     pub async fn connect_with_server(host_name: &str) -> Result<TcpStream, std::io::Error> {
         assert_eq!(
             config::API_KEY.len(),
@@ -194,6 +197,7 @@ pub mod client {
         Ok(server)
     }
 
+    /// Wait for the server to request a new stream, the port returned by the server is the identifier of the user request
     pub fn wait_for_stream_request(server: &TcpStream) -> Result<u16, Option<io::Error>> {
         let mut buff = [0; 2];
         loop {

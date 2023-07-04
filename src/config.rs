@@ -18,16 +18,23 @@ lazy_static! {
   pub static ref HOST_EXTRACT: Regex = RegexBuilder::new(r#"(\n|^)host: (?P<hostname>[A-z-_]{0,32}(:[0-9]{1,6})?)(\r)?\n"#).case_insensitive(true).build().unwrap();
 }
 
+/// The proxy server address
 #[cfg(not(feature = "deployed"))]
 pub const PROXY_SERVER: &str = "127.0.0.1:3000";
+/// The proxy server address for streams
 #[cfg(not(feature = "deployed"))]
 pub const PROXY_SERVER_STREAMS: &str = "127.0.0.1:3001";
 
+/// The proxy server address
 #[cfg(feature = "deployed")]
 pub const PROXY_SERVER: &str = "34.159.32.3:3000";
+/// The proxy server address for streams
 #[cfg(feature = "deployed")]
 pub const PROXY_SERVER_STREAMS: &str = "34.159.32.3:3001";
 
+/// Binding address for the server client entrypoint
 pub const BINDING_ADDR_CLIENT: &str = "0.0.0.0:3000";
+/// Binding address for the server client entrypoint for streams
 pub const BINDING_ADDR_CLIENT_USER_STREAM: &str = "0.0.0.0:3001";
+/// Binding address for the server front entrypoint
 pub const BINDING_ADDR_FRONT: &str = "0.0.0.0:8080";

@@ -10,6 +10,9 @@ use crate::{
     method, ClientConnection,
 };
 
+/// Handle a new client connection, look for the host it wants to connect to and store it
+///
+/// If ingress is enabled, expose the subdomain
 pub async fn handle_client(mut client_conn: TcpStream) -> Result<(), ()> {
     auth::check_api_key(&mut client_conn).await?;
 
@@ -33,6 +36,7 @@ pub async fn handle_client(mut client_conn: TcpStream) -> Result<(), ()> {
     Ok(())
 }
 
+/// Handle the new stream created by the client, this will host the communication between the client and the user
 pub async fn handle_client_stream(mut client_stream_conn: TcpStream) -> Result<(), ()> {
     auth::check_api_key(&mut client_stream_conn).await?;
 
@@ -71,6 +75,7 @@ pub async fn handle_client_stream(mut client_stream_conn: TcpStream) -> Result<(
     Ok(())
 }
 
+/// Get the associated client connection from the route requested by the user
 pub async fn get_client(host: &String) -> Option<ClientConnection> {
     debug!("Acquiring lock for : [handle_request] ROUTES.write().await");
     let routes_r = config::ROUTES.read().await;
@@ -79,7 +84,8 @@ pub async fn get_client(host: &String) -> Option<ClientConnection> {
     routes_r.get(host).cloned()
 }
 
-pub async fn handle_request(
+/// Handle a request from a user, forward it to the client and wait for the client to connect
+pub async fn handle_user_request(
     request_conn: TcpStream,
     socket: SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error>> {
