@@ -1,11 +1,12 @@
+use std::{thread, time::Duration};
+
 use log::info;
-use rustgrok::{config, method};
 use rustgrok::{
     config::{BINDING_ADDR_CLIENT, BINDING_ADDR_CLIENT_USER_STREAM, BINDING_ADDR_FRONT},
     handler,
 };
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
+use tokio::{io::AsyncWriteExt, task::JoinHandle};
 
 pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
     let client = TcpListener::bind(BINDING_ADDR_CLIENT).await?;
@@ -37,7 +38,7 @@ pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
         while let Ok((request, socket)) = receiver.accept().await {
             info!("[SERVER] Incoming request user_port: {:?}", socket.port());
             tokio::spawn(async move {
-                handler::handle_request(request, socket).await.unwrap();
+                handler::handle_user_request(request, socket).await.unwrap();
             });
         }
     });
@@ -47,4 +48,35 @@ pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+const EXAMPLE_PAYLOAD: &str = r#"HTTP/1.1 200 OK
+Last-Modified: Wed, 22 Jul 2009 19:15:56 GMT
+Content-Length: 53
+Content-Type: text/html
+Connection: Closed
+
+<html>
+<body>
+<h1>Hello, World!</h1>
+</body>
+</html>
+"#;
+
+/// Start an app that will listen on 4444
+///
+/// It will return a basic hello world page [EXAMPLE_PAYLOAD]
+pub fn spawn_mock_app() -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let app = TcpListener::bind("0.0.0.0:4444").await.unwrap();
+
+        while let Ok((mut client, _)) = app.accept().await {
+            info!("[APP] client connected to the app");
+            thread::sleep(Duration::from_millis(100));
+            client.write_all(EXAMPLE_PAYLOAD.as_bytes()).await.unwrap();
+            client.flush().await.unwrap();
+            client.shutdown().await.unwrap();
+            info!("[APP] disconnected client from the app");
+        }
+    })
 }
