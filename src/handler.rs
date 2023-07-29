@@ -10,6 +10,9 @@ use crate::{
     method, ClientConnection,
 };
 
+#[cfg(feature = "ingress")]
+use crate::ingress;
+
 /// Handle a new client connection, look for the host it wants to connect to and store it
 ///
 /// If ingress is enabled, expose the subdomain
@@ -21,15 +24,15 @@ pub async fn handle_client(mut client_conn: TcpStream) -> Result<(), ()> {
     #[cfg(feature = "ingress")]
     ingress::expose_subdomain(&new_host).await.map_err(|_| ())?;
     {
-        debug!("Acquiring lock for : ROUTES.read().await");
+        debug!("[SERVER] Acquiring lock for : ROUTES.read().await");
         let mut routes_w = config::ROUTES.write().await;
-        debug!("Done: ROUTES.read().await");
+        debug!("[SERVER] Done: ROUTES.read().await");
 
         routes_w.insert(
             new_host.trim().to_string(),
             Arc::new(RwLock::new(client_conn)),
         );
-        info!("Inserted new route: {new_host}");
+        info!("[SERVER] Inserted new route: {new_host}");
     }
 
     // TODO: check if the client disconnected and prune it's routes
@@ -45,7 +48,7 @@ pub async fn handle_client_stream(mut client_stream_conn: TcpStream) -> Result<(
     let target_port = getter::get_target_port(&mut client_stream_recv)
         .await
         .unwrap();
-    info!("Received a new stream from client for port: {target_port}");
+    info!("[SERVER] Received a new stream from client for port: {target_port}");
 
     let (user_request_recv, user_request_send) = config::USER_REQUEST_WAITING
         .write()
@@ -59,27 +62,27 @@ pub async fn handle_client_stream(mut client_stream_conn: TcpStream) -> Result<(
     let user_flow = method::spawn_stream_sync(
         user_request_recv,
         client_stream_send,
-        "user -> client".into(),
+        "[SERVER] user -> client".into(),
     );
     let client_flow = method::spawn_stream_sync(
         client_stream_recv,
         user_request_send,
-        "client -> user".into(),
+        "[SERVER] client -> user".into(),
     );
 
     // Wait for only one of the two stream to finish
     let _ = future::select_all(vec![user_flow, client_flow]).await;
 
-    info!("Request/stream done here on server for port: {target_port}");
+    info!("[SERVER] Request/stream done here on server for port: {target_port}");
 
     Ok(())
 }
 
 /// Get the associated client connection from the route requested by the user
 pub async fn get_client(host: &String) -> Option<ClientConnection> {
-    debug!("Acquiring lock for : [handle_request] ROUTES.write().await");
+    debug!("[SERVER] Acquiring lock for : [handle_request] ROUTES.write().await");
     let routes_r = config::ROUTES.read().await;
-    debug!("Done: [handle_request] ROUTES.write().await");
+    debug!("[SERVER] Done: [handle_request] ROUTES.write().await");
 
     routes_r.get(host).cloned()
 }
@@ -93,7 +96,10 @@ pub async fn handle_user_request(
 
     if let Some(host) = getter::get_user_host(&mut request_recv).await {
         let port = socket.port();
-        info!("Request for host: {host:?} from user_port: {}", port);
+        info!(
+            "[SERVER] Request for host: {host:?} from user_port: {}",
+            port
+        );
         let client_conn = get_client(&host).await;
         if let Some(client_conn) = client_conn {
             if method::server::request_client_stream(port, client_conn)
@@ -101,18 +107,18 @@ pub async fn handle_user_request(
                 .is_ok()
             {
                 method::server::insert_waiting_client(port, (request_recv, request_send)).await;
-                info!("Request handled and now waiting for client");
+                info!("[SERVER] Request handled and now waiting for client");
                 return Ok(());
             } else {
-                error!("requesting new stream, removing route: {host}");
+                error!("[SERVER] requesting new stream, removing route: {host}");
                 let mut routes_w = config::ROUTES.write().await;
                 routes_w.remove_entry(&host);
             }
         } else {
-            info!("did not found associated route to request");
+            info!("[SERVER] did not found associated route to request");
         }
     } else {
-        error!("Host not found in client request, disconnected.")
+        error!("[SERVER] Host not found in client request, disconnected.")
     }
     request_send.shutdown().await.unwrap();
 

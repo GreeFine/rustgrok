@@ -13,15 +13,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 
     let client = TcpListener::bind(BINDING_ADDR_CLIENT).await?;
-    info!("Client server started on {BINDING_ADDR_CLIENT}");
+    info!("[SERVER] Client server started on {BINDING_ADDR_CLIENT}");
     let client_streams = TcpListener::bind(BINDING_ADDR_CLIENT_USER_STREAM).await?;
-    info!("User stream from Client server started on {BINDING_ADDR_CLIENT_USER_STREAM}");
+    info!("[SERVER] User stream from Client server started on {BINDING_ADDR_CLIENT_USER_STREAM}");
     let receiver = TcpListener::bind(BINDING_ADDR_FRONT).await.unwrap();
-    info!("Front server started on {BINDING_ADDR_FRONT}");
+    info!("[SERVER] Front server started on {BINDING_ADDR_FRONT}");
 
     let client_handler = tokio::spawn(async move {
         while let Ok((client, _)) = client.accept().await {
-            info!("Client connected");
+            info!("[SERVER] client connected");
             tokio::spawn(async move {
                 handler::handle_client(client).await.unwrap();
             });
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_streams = tokio::spawn(async move {
         while let Ok((client_stream, _)) = client_streams.accept().await {
-            info!("New Client Stream");
+            info!("[SERVER] New client stream");
             tokio::spawn(async move {
                 handler::handle_client_stream(client_stream).await.unwrap();
             });
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let receiver_handler = tokio::spawn(async move {
         while let Ok((request, socket)) = receiver.accept().await {
-            info!("Incoming request user_port: {:?}", socket.port());
+            info!("[SERVER] Incoming request user_port: {:?}", socket.port());
             tokio::spawn(async move {
                 handler::handle_user_request(request, socket).await.unwrap();
             });

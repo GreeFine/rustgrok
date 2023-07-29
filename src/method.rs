@@ -84,13 +84,13 @@ pub mod server {
         match client_w.try_read(&mut buff) {
             Ok(n) => {
                 if n == 0 {
-                    info!("Client disconnected");
+                    info!("[SERVER] Client disconnected");
                     return Err(());
                 }
             }
             Err(error) => {
                 if !matches!(error.kind(), ErrorKind::WouldBlock) {
-                    error!("error checking client read: {error}");
+                    error!("[SERVER] error checking client read: {error}");
                     return Err(());
                 }
             }
@@ -101,18 +101,18 @@ pub mod server {
             // Return value of `Ok(0)` signifies that the remote has
             // closed
             Ok(0) => {
-                info!("Client closed the connection");
+                info!("[SERVER] Client closed the connection");
                 // Shutting down the connection
                 return Err(());
             }
             Ok(n) => {
-                info!("Request client stream {port}, sended data {n} bytes");
+                info!("[SERVER] Request client stream {port}, sended data {n} bytes");
             }
             Err(e) => {
                 // Unexpected socket error. There isn't much we can do
                 // here so just stop processing.
                 if !matches!(e.kind(), ErrorKind::WouldBlock) {
-                    error!("Proxy error: {e}");
+                    error!("[SERVER] Proxy error: {e}");
                     return Err(());
                 }
             }
@@ -146,9 +146,9 @@ pub mod client {
     pub fn spawn_new_stream(port: u16, local_app_addr: String) {
         tokio::spawn(async move {
             let app_stream: TcpStream = connect_socket(&local_app_addr).await.unwrap();
-            info!("Connected to app {local_app_addr}");
+            info!("[CLIENT] Connected to app {local_app_addr}");
             let server_stream = connect_socket(config::PROXY_SERVER_STREAMS).await.unwrap();
-            info!("Connected to server for stream port {port}");
+            info!("[CLIENT] Connected to server for stream port {port}");
 
             let (app_recv, app_send) = app_stream.into_split();
             let (server_recv, mut server_send) = server_stream.into_split();
@@ -170,8 +170,8 @@ pub mod client {
             // Wait for only one of the two stream to finish
             let _ = future::select_all(vec![app_flow, server_flow]).await;
 
-            info!("stream done for {port}");
-        });
+            info!("[CLIENT] stream done for {port}");
+        })
     }
 
     /// Connect to the server and send the host name to the server
@@ -181,9 +181,9 @@ pub mod client {
             32,
             "server is expecting a 32 bytes key"
         );
-        info!("Connecting to server {}", config::PROXY_SERVER);
+        info!("[CLIENT] Connecting to server {}", config::PROXY_SERVER);
         let mut server = connect_socket(config::PROXY_SERVER).await?;
-        info!("Connected to server");
+        info!("[CLIENT] Connected to server");
 
         let mut payload = vec![0_u8; config::API_KEY.len() + host_name.len()];
         payload[..32].copy_from_slice(config::API_KEY.as_bytes());
@@ -205,11 +205,11 @@ pub mod client {
             match read {
                 Ok(n) => {
                     if n == 0 {
-                        info!("Connection closed");
+                        info!("[CLIENT] Connection closed");
                         break Err(None);
                     }
                     let received_port = u16::from_be_bytes(buff);
-                    info!("received_port: {received_port}");
+                    info!("[CLIENT] received_port: {received_port}");
                     return Ok(received_port);
                 }
                 Err(e) => {
