@@ -41,7 +41,10 @@ pub fn spawn_stream_sync(
         let mut buff = vec![0; 32_768 * 2];
         let recv = recv.read().await;
         let mut send = send.write().await;
+
         loop {
+            recv.readable().await.unwrap();
+            send.writable().await.unwrap();
             match recv.try_read(&mut buff) {
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
@@ -53,8 +56,24 @@ pub fn spawn_stream_sync(
                 }
                 Ok(n) => {
                     info!("Proxy {name}, received data {n} bytes");
+                    let mut to_write = n;
                     // Copy the data back to socket
-                    send.write_all(&buff[..n]).await?;
+                    while to_write > 0 {
+                        let wrote = send.try_write(&buff[..n]);
+                        match wrote {
+                            Ok(n) => {
+                                info!("Proxy {name}, sent data {n} bytes");
+                                to_write -= n;
+                            }
+                            Err(e) => {
+                                if !matches!(e.kind(), ErrorKind::WouldBlock) {
+                                    error!("Proxy error: {e}");
+                                    let _ = send.shutdown().await;
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     // Unexpected socket error. There isn't much we can do
@@ -143,7 +162,7 @@ pub mod client {
     /// Create a new stream that will connect to the server and be used to received a user request
     ///
     /// We use the port to identify the user request that this stream should be linked with
-    pub fn spawn_new_stream(port: u16, local_app_addr: String) {
+    pub fn spawn_new_stream(port: u16, local_app_addr: String) -> JoinHandle<()> {
         tokio::spawn(async move {
             let app_stream: TcpStream = connect_socket(&local_app_addr).await.unwrap();
             info!("[CLIENT] Connected to app {local_app_addr}");
@@ -164,8 +183,17 @@ pub mod client {
             let server_recv = Arc::new(RwLock::new(server_recv));
             let server_send = Arc::new(RwLock::new(server_send));
 
-            let app_flow = spawn_stream_sync(app_recv, server_send, "app -> server".into());
-            let server_flow = spawn_stream_sync(server_recv, app_send, "server -> app".into());
+            let mut buff = [0u8; 32];
+            let peeked = server_recv.write().await.peek(&mut buff).await.unwrap();
+            info!(
+                "peeked {peeked} bytes. peeked: {}",
+                String::from_utf8_lossy(&buff[..peeked])
+            );
+
+            let app_flow =
+                spawn_stream_sync(app_recv, server_send, "[CLIENT] app -> server".into());
+            let server_flow =
+                spawn_stream_sync(server_recv, app_send, "[CLIENT] server -> app".into());
 
             // Wait for only one of the two stream to finish
             let _ = future::select_all(vec![app_flow, server_flow]).await;
