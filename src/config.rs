@@ -15,7 +15,7 @@ lazy_static! {
   /// FIXME: load this from env
   pub static ref API_KEY: String = std::env::var("API_KEY").unwrap_or("gub_tEPmAGMzb9SQxzTzh9ZU95Wtj6uP".to_string());
   /// Regex used to extract the host from the request,
-  pub static ref HOST_EXTRACT: Regex = RegexBuilder::new(r#"(\n|^)host: (?P<hostname>[A-z-_]{0,32}(:[0-9]{1,6})?)(\r)?\n"#).case_insensitive(true).build().unwrap();
+  pub static ref HOST_EXTRACT: Regex = RegexBuilder::new(r#"(\n|^)host: (?P<hostname>[A-z-_.]{0,32}(:[0-9]{1,6})?)(\r)?\n"#).case_insensitive(true).build().unwrap();
 }
 
 /// The proxy server address

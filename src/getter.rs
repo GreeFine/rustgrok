@@ -49,3 +49,13 @@ pub async fn get_target_port<'a>(client_recv: &mut OwnedReadHalf) -> Result<u16,
     }
     Ok(u16::from_be_bytes(buff))
 }
+
+#[test]
+fn test_get_host() {
+    const RAW_HEADER: &str = "GET / HTTP/1.1\r\nHost: jambon.rgrok.blackfoot.dev\r\nUser-Agent: curl/7.68.0\r\nAccept: */*\r\nX-";
+    let captures = config::HOST_EXTRACT.captures(RAW_HEADER);
+    assert_eq!(
+        captures.unwrap().name("hostname").unwrap().as_str(),
+        "jambon.rgrok.blackfoot.dev"
+    );
+}
