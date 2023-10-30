@@ -38,7 +38,7 @@ pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
         while let Ok((request, socket)) = receiver.accept().await {
             info!("[SERVER] Incoming request user_port: {:?}", socket.port());
             tokio::spawn(async move {
-                handler::handle_user_request(request, socket).await.unwrap();
+                handler::handle_user_request(request, socket).await;
             });
         }
     });
@@ -69,6 +69,7 @@ Connection: Closed
 pub fn spawn_mock_app() -> JoinHandle<()> {
     tokio::spawn(async move {
         let app = TcpListener::bind("0.0.0.0:4444").await.unwrap();
+        info!("[MOCK APP] server started");
 
         while let Ok((mut client, _)) = app.accept().await {
             info!("[APP] client connected to the app");

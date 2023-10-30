@@ -15,7 +15,7 @@ lazy_static! {
   /// FIXME: load this from env
   pub static ref API_KEY: String = std::env::var("API_KEY").unwrap_or("gub_tEPmAGMzb9SQxzTzh9ZU95Wtj6uP".to_string());
   /// Regex used to extract the host from the request,
-  pub static ref HOST_EXTRACT: Regex = RegexBuilder::new(r#"(\n|^)host: (?P<hostname>[A-z-_.]{0,32}(:[0-9]{1,6})?)(\r)?\n"#).case_insensitive(true).build().unwrap();
+  pub static ref HOST_EXTRACT: Regex = RegexBuilder::new("^.*\n?host: (?P<hostname>[A-z-_.0-9]{0,32}(:[0-9]{1,6})?)(\r)?\n").case_insensitive(true).build().unwrap();
 }
 
 /// The proxy server address
@@ -38,3 +38,7 @@ pub const BINDING_ADDR_CLIENT: &str = "0.0.0.0:3000";
 pub const BINDING_ADDR_CLIENT_USER_STREAM: &str = "0.0.0.0:3001";
 /// Binding address for the server front entrypoint
 pub const BINDING_ADDR_FRONT: &str = "0.0.0.0:8080";
+
+/// Size of the buffers used to read/write from/to the streams
+/// Here 1Mb
+pub const BUFFER_STREAM_SIZE: usize = 1024 * 1024;

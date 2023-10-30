@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use futures::future;
 use log::{debug, error, info};
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::RwLock};
+use tokio::{net::TcpStream, sync::RwLock};
 
 use crate::{
     auth, config,
@@ -24,9 +24,9 @@ pub async fn handle_client(mut client_conn: TcpStream) -> Result<(), ()> {
     #[cfg(feature = "ingress")]
     ingress::expose_subdomain(&new_host).await.map_err(|_| ())?;
     {
-        debug!("[SERVER] Acquiring lock for : ROUTES.read().await");
+        debug!("[SERVER] Acquiring lock for : ROUTES.write().await");
         let mut routes_w = config::ROUTES.write().await;
-        debug!("[SERVER] Done: ROUTES.read().await");
+        debug!("[SERVER] Done: ROUTES.write().await");
 
         routes_w.insert(
             new_host.trim().to_string(),
@@ -80,47 +80,42 @@ pub async fn handle_client_stream(mut client_stream_conn: TcpStream) -> Result<(
 
 /// Get the associated client connection from the route requested by the user
 pub async fn get_client(host: &String) -> Option<ClientConnection> {
-    debug!("[SERVER] Acquiring lock for : [handle_request] ROUTES.write().await");
+    debug!("[SERVER] Acquiring lock for : [handle_request] ROUTES.read().await");
     let routes_r = config::ROUTES.read().await;
-    debug!("[SERVER] Done: [handle_request] ROUTES.write().await");
+    debug!("[SERVER] Done: [handle_request] ROUTES.read().await");
 
     routes_r.get(host).cloned()
 }
 
 /// Handle a request from a user, forward it to the client and wait for the client to connect
-pub async fn handle_user_request(
-    request_conn: TcpStream,
-    socket: SocketAddr,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut request_recv, mut request_send) = request_conn.into_split();
+pub async fn handle_user_request(request_conn: TcpStream, socket: SocketAddr) {
+    let (mut request_recv, request_send) = request_conn.into_split();
 
-    if let Some(host) = getter::get_user_host(&mut request_recv).await {
-        let port = socket.port();
-        info!(
-            "[SERVER] Request for host: {host:?} from user_port: {}",
-            port
-        );
-        let client_conn = get_client(&host).await;
-        if let Some(client_conn) = client_conn {
-            if method::server::request_client_stream(port, client_conn)
-                .await
-                .is_ok()
-            {
-                method::server::insert_waiting_client(port, (request_recv, request_send)).await;
-                info!("[SERVER] Request handled and now waiting for client");
-                return Ok(());
-            } else {
-                error!("[SERVER] requesting new stream, removing route: {host}");
-                let mut routes_w = config::ROUTES.write().await;
-                routes_w.remove_entry(&host);
-            }
+    let Some(host) = getter::get_user_host(&mut request_recv).await else {
+        error!("[SERVER] Host not found in client request, disconnected.");
+        return;
+    };
+
+    let port = socket.port();
+    info!(
+        "[SERVER] Request for host: {host:?} from user_port: {}",
+        port
+    );
+    let client_conn = get_client(&host).await;
+
+    if let Some(client_conn) = client_conn {
+        if method::server::request_client_stream(port, client_conn)
+            .await
+            .is_ok()
+        {
+            method::server::insert_waiting_client(port, (request_recv, request_send)).await;
+            info!("[SERVER] Request handled and now waiting for client");
         } else {
-            info!("[SERVER] did not found associated route to request");
+            error!("[SERVER] requesting new stream, removing route: {host}");
+            let mut routes_w = config::ROUTES.write().await;
+            routes_w.remove_entry(&host);
         }
     } else {
-        error!("[SERVER] Host not found in client request, disconnected.")
+        info!("[SERVER] did not found associated route to request");
     }
-    request_send.shutdown().await.unwrap();
-
-    Ok(())
 }

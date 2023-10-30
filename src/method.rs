@@ -3,7 +3,7 @@ use std::{io::ErrorKind, sync::Arc, thread, time::Duration};
 use futures::future;
 use log::{error, info};
 use tokio::{
-    io::{self, AsyncWriteExt},
+    io::{self, AsyncReadExt, AsyncWriteExt},
     net::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
         TcpSocket, TcpStream,
@@ -38,14 +38,14 @@ pub fn spawn_stream_sync(
     info!("Proxy start: {}", name);
     tokio::spawn(async move {
         // looks like the max transferred is 32_768, 2 times that to account for weird things /shrug
-        let mut buff = vec![0; 32_768 * 2];
-        let recv = recv.read().await;
+        let mut buff = vec![0; config::BUFFER_STREAM_SIZE];
+        let mut recv = recv.write().await;
         let mut send = send.write().await;
 
         loop {
             recv.readable().await.unwrap();
             send.writable().await.unwrap();
-            match recv.try_read(&mut buff) {
+            match recv.read(&mut buff).await {
                 // Return value of `Ok(0)` signifies that the remote has
                 // closed
                 Ok(0) => {
@@ -56,24 +56,11 @@ pub fn spawn_stream_sync(
                 }
                 Ok(n) => {
                     info!("Proxy {name}, received data {n} bytes");
-                    let mut to_write = n;
                     // Copy the data back to socket
-                    while to_write > 0 {
-                        let wrote = send.try_write(&buff[..n]);
-                        match wrote {
-                            Ok(n) => {
-                                info!("Proxy {name}, sent data {n} bytes");
-                                to_write -= n;
-                            }
-                            Err(e) => {
-                                if !matches!(e.kind(), ErrorKind::WouldBlock) {
-                                    error!("Proxy error: {e}");
-                                    let _ = send.shutdown().await;
-                                    return Err(e);
-                                }
-                            }
-                        }
-                    }
+                    let result = send.write_all(&buff[..n]).await;
+                    // FIXME: better error handling
+                    result.expect("writing all the data");
+                    info!("Proxy {name}, wrote all the data {n} bytes");
                 }
                 Err(e) => {
                     // Unexpected socket error. There isn't much we can do
@@ -92,30 +79,41 @@ pub fn spawn_stream_sync(
 
 /// This module contains the methods used by the server to handle the client requests
 pub mod server {
+    use log::debug;
+
     use super::*;
 
     /// Ask the client to open a new Stream, we send the port used by the request from the user as an identifier.
     ///
     /// For more info see the client side handler: [spawn_new_stream]
     pub async fn request_client_stream(port: u16, client: ClientConnection) -> Result<(), ()> {
-        let client_w = client.write().await;
-        let mut buff = [0u8; 0];
-        match client_w.try_read(&mut buff) {
-            Ok(n) => {
-                if n == 0 {
-                    info!("[SERVER] Client disconnected");
-                    return Err(());
+        info!("[SERVER] Requesting a new stream from client");
+        debug!("waiting of client.write() lock");
+        let mut client_w = client.write().await;
+        debug!("got client.write() lock");
+
+        // Check if the client is still there
+        // FIXME: better error handling
+        {
+            let mut buff = [0u8; 0];
+            match client_w.try_read(&mut buff) {
+                Ok(n) => {
+                    if n == 0 {
+                        info!("[SERVER] Client disconnected");
+                        return Err(());
+                    }
                 }
-            }
-            Err(error) => {
-                if !matches!(error.kind(), ErrorKind::WouldBlock) {
-                    error!("[SERVER] error checking client read: {error}");
-                    return Err(());
+                Err(error) => {
+                    if !matches!(error.kind(), ErrorKind::WouldBlock) {
+                        error!("[SERVER] error checking client read: {error}");
+                        return Err(());
+                    }
                 }
             }
         }
 
-        let result = client_w.try_write(&port.to_be_bytes());
+        client_w.writable().await.unwrap();
+        let result = client_w.write(&port.to_be_bytes()).await;
         match result {
             // Return value of `Ok(0)` signifies that the remote has
             // closed
@@ -157,6 +155,8 @@ pub mod server {
 
 /// This module contains the methods used by the client to handle the server requests
 pub mod client {
+    use tokio::io::AsyncReadExt;
+
     use super::*;
 
     /// Create a new stream that will connect to the server and be used to received a user request
@@ -217,37 +217,37 @@ pub mod client {
         payload[..32].copy_from_slice(config::API_KEY.as_bytes());
         payload[32..].copy_from_slice(host_name.as_bytes());
 
+        // Wait for server socket to be writable
+        server.writable().await?;
+        info!("[CLIENT] asking to server for hostname: {host_name}");
+
         server
             .write_all(&payload)
             .await
             .expect("sending host to server");
-
+        info!("[CLIENT] hostname: {host_name} asked to server");
         Ok(server)
     }
 
     /// Wait for the server to request a new stream, the port returned by the server is the identifier of the user request
-    pub fn wait_for_stream_request(server: &TcpStream) -> Result<u16, Option<io::Error>> {
+    pub async fn wait_for_stream_request(server: &mut TcpStream) -> Result<u16, Option<io::Error>> {
         let mut buff = [0; 2];
-        loop {
-            let read = server.try_read(&mut buff);
-            match read {
-                Ok(n) => {
-                    if n == 0 {
-                        info!("[CLIENT] Connection closed");
-                        break Err(None);
-                    }
-                    let received_port = u16::from_be_bytes(buff);
-                    info!("[CLIENT] received_port: {received_port}");
-                    return Ok(received_port);
+        server.readable().await?;
+        let read = server.read(&mut buff).await;
+        match read {
+            Ok(n) => {
+                if n == 0 {
+                    info!("[CLIENT] Connection closed");
+                    return Err(None);
                 }
-                Err(e) => {
-                    if !matches!(e.kind(), ErrorKind::WouldBlock) {
-                        error!("Proxy error: {e}");
-                        break Err(Some(e));
-                    };
-                }
-            };
-            thread::sleep(Duration::from_millis(25))
+                let received_port = u16::from_be_bytes(buff);
+                info!("[CLIENT] received_port: {received_port}");
+                Ok(received_port)
+            }
+            Err(e) => {
+                error!("Proxy error: {e}");
+                Err(Some(e))
+            }
         }
     }
 }

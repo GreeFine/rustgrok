@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "server,rustgrok");
-    pretty_env_logger::init();
+    console_subscriber::init();
 
     let client = TcpListener::bind(BINDING_ADDR_CLIENT).await?;
     info!("[SERVER] Client server started on {BINDING_ADDR_CLIENT}");
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Ok((request, socket)) = receiver.accept().await {
             info!("[SERVER] Incoming request user_port: {:?}", socket.port());
             tokio::spawn(async move {
-                handler::handle_user_request(request, socket).await.unwrap();
+                handler::handle_user_request(request, socket).await;
             });
         }
     });
